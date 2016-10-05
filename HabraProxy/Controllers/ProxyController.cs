@@ -38,9 +38,14 @@ namespace HabraProxy.Controllers
 
             var tree = new HtmlDocument();
             tree.LoadHtml(encoded);
-            
+            // fix url's in styles properties
+            tree.DocumentNode.SelectSingleNode("//head").InnerHtml = Regex.Replace(tree.DocumentNode.SelectSingleNode("//head").InnerHtml,
+                                                                                   @"(?<=url\()(?=/)",
+                                                                                   proxiedSite);
+
+            var head = tree.DocumentNode.SelectSingleNode("//head").InnerHtml;
             //replace all references from habrahabr site to localhost
-            foreach (var a in tree.DocumentNode.SelectNodes("//a"))
+            foreach (var a in tree.DocumentNode.SelectSingleNode("//body").SelectNodes("//a").Concat(tree.DocumentNode.SelectSingleNode("//body").SelectNodes("//link")))
 	        {
                 if (a.Attributes["href"] != null)
                 {
@@ -48,14 +53,26 @@ namespace HabraProxy.Controllers
                                                                getUrlPattern(proxiedSite), 
                                                                getRootPath());
                 }
-	        }  
+            }
 
             // Add tm's
+            // tokenize and protect values, that shouldn't be processed - tags and content inside utility tags
+            //content of script and style tags
+            int index = 0;
+            var styleScriptDict = new Dictionary<int, string>();
+            foreach (var item in tree.DocumentNode.SelectSingleNode("//body").SelectNodes("//script").Concat(tree.DocumentNode.SelectSingleNode("//body").SelectNodes("//style")))
+            {
+                if (string.IsNullOrWhiteSpace(item.InnerHtml))
+                    continue;
+
+                styleScriptDict[index] = item.InnerHtml;
+                item.InnerHtml = protectInt(index);
+                index++;
+            }
             var innerBody = tree.DocumentNode.SelectSingleNode("//body").InnerHtml;
 
-            // tokenize and protect values, that shouldn't be processed - tags and content inside utility tags
-            var matches = Regex.Matches(innerBody, "(<style.*?>.*?</style>|<script.*?>.*?</script>|<.*?>)").Cast<Match>();
-            int index = 0;
+            var matches = Regex.Matches(innerBody, "<.*?>").Cast<Match>();
+            
             var dict = new Dictionary<int, string>();
             foreach (var match in matches)
             {
@@ -68,13 +85,21 @@ namespace HabraProxy.Controllers
             innerBody = addTMs(innerBody);
 
             //restore tokenized values
-            foreach (var item in dict)
+            foreach(var item in dict)
             {
                 innerBody = innerBody.Replace(protectInt(item.Key), item.Value);
             }
-
-
             tree.DocumentNode.SelectSingleNode("//body").InnerHtml = innerBody;
+            foreach (var item in tree.DocumentNode.SelectSingleNode("//body").SelectNodes("//script").Concat(tree.DocumentNode.SelectSingleNode("//body").SelectNodes("//style")))
+            {
+                var i = unprotectInt(item.InnerHtml);
+                if (i != null)
+                {
+                    item.InnerHtml = styleScriptDict[i.Value];
+                }
+            }
+
+            tree.DocumentNode.SelectSingleNode("//head").InnerHtml = head;
 
             return Content(tree.DocumentNode.InnerHtml);
         }
@@ -82,10 +107,10 @@ namespace HabraProxy.Controllers
         private string addTMs(string input)
         {
             var _input = input;
-            var sixLettersWords = Regex.Matches(_input, @"(?<=[^А-Яа-яA-Za-z-])[А-Яа-яA-Za-z-]{6}(?=[^А-Яа-яA-Za-z-])").Cast<Match>().Select(x => x.Value).Distinct();
+            var sixLettersWords = Regex.Matches(_input, @"(?<=[^А-Яа-яA-Za-z<>-])[А-Яа-яA-Za-z-]{6}(?=[^А-Яа-яA-Za-z<>-])").Cast<Match>().Select(x => x.Value).Distinct();
             foreach (var word in sixLettersWords)
             {
-                _input = Regex.Replace(_input, @"(?<=[^А-Яа-яA-Za-z-])" + word + @"(?=[^А-Яа-яA-Za-z-])", word + "™");
+                _input = Regex.Replace(_input, @"(?<=[^А-Яа-яA-Za-z<>-])" + word + @"(?=[^А-Яа-яA-Za-z<>-])", word + "™");
             }
             return _input;
         }
@@ -100,6 +125,20 @@ namespace HabraProxy.Controllers
             return string.Format("%$#{0}#$%", value);
         }
         
+        private int? unprotectInt(string value)
+        {
+            if (!value.StartsWith("%$#") && !value.EndsWith("#$%"))
+            {
+                return null;
+            }
+            int result;
+            if (!int.TryParse(value.Trim('#','$','%'), out result))
+            {
+                return null;
+            }
+            return result;
+        }
+
         private string getUrlPattern(string url)
         {
             return Regex.Replace(url, "https?://", "(https?://)?");
