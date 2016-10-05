@@ -82,10 +82,10 @@ namespace HabraProxy.Controllers
         private string addTMs(string input)
         {
             var _input = input;
-            var sixLettersWords = Regex.Matches(_input, @"\b[A-Za-zА-Яа-я]{6}\b").Cast<Match>().Select(x => x.Value).Distinct();
+            var sixLettersWords = Regex.Matches(_input, @"(?<=[^А-Яа-яA-Za-z-])[А-Яа-яA-Za-z-]{6}(?=[^А-Яа-яA-Za-z-])").Cast<Match>().Select(x => x.Value).Distinct();
             foreach (var word in sixLettersWords)
             {
-                _input = Regex.Replace(_input, @"(?<=\b)" + word + @"(?=\b)", word + "™");
+                _input = Regex.Replace(_input, @"(?<=[^А-Яа-яA-Za-z-])" + word + @"(?=[^А-Яа-яA-Za-z-])", word + "™");
             }
             return _input;
         }
