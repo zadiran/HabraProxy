@@ -44,7 +44,9 @@ namespace HabraProxy.Controllers
 	        {
                 if (a.Attributes["href"] != null)
                 {
-                    a.Attributes["href"].Value = a.Attributes["href"].Value.Replace(proxiedSite, getRootPath());
+                    a.Attributes["href"].Value = Regex.Replace(a.Attributes["href"].Value,
+                                                               getUrlPattern(proxiedSite), 
+                                                               getRootPath());
                 }
 	        }  
 
@@ -96,6 +98,11 @@ namespace HabraProxy.Controllers
         private string protectInt(int value)
         {
             return string.Format("%$#{0}#$%", value);
+        }
+        
+        private string getUrlPattern(string url)
+        {
+            return Regex.Replace(url, "https?://", "(https?://)?");
         }
     }
 }
